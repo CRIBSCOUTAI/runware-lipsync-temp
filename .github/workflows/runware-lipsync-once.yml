@@ -1,4 +1,4 @@
-name: Runware LipSync Result Poller
+name: Runware LipSync Corrective Run
 
 on:
   workflow_dispatch:
@@ -7,48 +7,86 @@ permissions:
   contents: read
 
 jobs:
-  poll:
+  generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
-      - name: Poll accepted Runware task
+      - name: Submit exactly one corrected LipSync request and poll
         env:
           RUNWARE_API_KEY: ${{ secrets.RUNWARE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
+          cat > request.json <<'JSON'
+          [
+            {
+              "model": "sync:lipsync-2@1",
+              "inputs": {
+                "video": "a49f0af8-55cf-49cf-b336-4a552e0cc88b",
+                "audio": "https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3"
+              },
+              "taskType": "videoInference",
+              "taskUUID": "478fd68a-1414-413c-a5d9-12c775edc928",
+              "numberResults": 1,
+              "outputType": "URL",
+              "outputFormat": "MP4",
+              "outputQuality": 95,
+              "deliveryMethod": "async",
+              "providerSettings": {
+                "sync": {
+                  "syncMode": "cut_off",
+                  "temperature": 0.25
+                }
+              }
+            }
+          ]
+          JSON
+
+          test "$(jq -r '.[0].inputs.video' request.json)" = "a49f0af8-55cf-49cf-b336-4a552e0cc88b"
+          test "$(jq -r '.[0].inputs.audio' request.json)" = "https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3"
+
+          curl --silent --show-error --fail -X POST 'https://api.runware.ai/v1' \
+            -H "Authorization: Bearer $RUNWARE_API_KEY" \
+            -H 'Content-Type: application/json' \
+            --data-binary @request.json -o submit-response.json
+          cat submit-response.json
+          test "$(jq -r '.errors | length' submit-response.json)" = "0"
+
           cat > poll-request.json <<'JSON'
           [
             {
               "taskType": "getResponse",
-              "taskUUID": "f162ee36-94ef-4415-8962-8d239c87fc38"
+              "taskUUID": "478fd68a-1414-413c-a5d9-12c775edc928"
             }
           ]
           JSON
-          for attempt in $(seq 1 40); do
-            curl --silent --show-error --fail -X POST 'https://api.runware.ai/v1' -H "Authorization: Bearer $RUNWARE_API_KEY" -H 'Content-Type: application/json' --data-binary @poll-request.json -o response.json
+
+          for attempt in $(seq 1 60); do
+            curl --silent --show-error --fail -X POST 'https://api.runware.ai/v1' \
+              -H "Authorization: Bearer $RUNWARE_API_KEY" \
+              -H 'Content-Type: application/json' \
+              --data-binary @poll-request.json -o response.json
             cat response.json
             video_url="$(jq -r '[.data[]? | select(.status == "success" and .videoURL != null)][0].videoURL // empty' response.json)"
             if [ -n "$video_url" ]; then
               printf '%s\n' "$video_url" > video_url.txt
-              curl --silent --show-error --fail --location "$video_url" -o Crib_Scout_Scene_1_LipSync.mp4
+              curl --silent --show-error --fail --location "$video_url" -o Crib_Scout_Scene_1_LipSync_Corrected.mp4
               break
             fi
-            error_count="$(jq -r '.errors | length' response.json)"
-            if [ "$error_count" != "0" ]; then
-              exit 1
-            fi
+            test "$(jq -r '.errors | length' response.json)" = "0"
             sleep 10
           done
-          test -s Crib_Scout_Scene_1_LipSync.mp4
+          test -s Crib_Scout_Scene_1_LipSync_Corrected.mp4
 
-      - name: Save completed output
+      - name: Save corrected output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: runware-final-output
+          name: runware-corrected-output
           path: |
+            request.json
+            submit-response.json
             poll-request.json
             response.json
             video_url.txt
-            Crib_Scout_Scene_1_LipSync.mp4
+            Crib_Scout_Scene_1_LipSync_Corrected.mp4
