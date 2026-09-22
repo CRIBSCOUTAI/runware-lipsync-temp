@@ -2,12 +2,15 @@ name: Runware LipSync Corrective Run
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   generate:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'RUN_ONCE_LIPSYNC')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
