@@ -1,4 +1,4 @@
-name: Runware LipSync Single Job
+name: Runware LipSync Result Poller
 
 on:
   workflow_dispatch:
@@ -7,52 +7,48 @@ permissions:
   contents: read
 
 jobs:
-  generate:
+  poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
-      - name: Submit exactly one LipSync request
+      - name: Poll accepted Runware task
         env:
           RUNWARE_API_KEY: ${{ secrets.RUNWARE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          cat > request.json <<'JSON'
+          cat > poll-request.json <<'JSON'
           [
             {
-              "model": "sync:lipsync-2@1",
-              "inputs": {
-                "video": "a49f0af8-55cf-49cf-b336-4a552e0cc88b",
-                "audio": "https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3"
-              },
-              "taskType": "videoInference",
-              "taskUUID": "f162ee36-94ef-4415-8962-8d239c87fc38",
-              "numberResults": 1,
-              "outputType": "URL",
-              "outputFormat": "MP4",
-              "outputQuality": 95,
-              "deliveryMethod": "async",
-              "providerSettings": {
-                "sync": {
-                  "syncMode": "remap",
-                  "temperature": 0.55
-                }
-              }
+              "taskType": "getResponse",
+              "taskUUID": "f162ee36-94ef-4415-8962-8d239c87fc38"
             }
           ]
           JSON
-          audio_status="$(curl --silent --show-error --head --max-redirs 0 -o /dev/null -w '%{http_code}' 'https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3')"
-          test "$audio_status" = "200"
-          http_status="$(curl --silent --show-error --connect-timeout 20 --max-time 600 -o response.json -w '%{http_code}' -X POST 'https://api.runware.ai/v1' -H "Authorization: Bearer $RUNWARE_API_KEY" -H 'Content-Type: application/json' --data-binary @request.json)"
-          printf '%s\n' "$http_status" > http_status.txt
-          cat response.json
+          for attempt in $(seq 1 40); do
+            curl --silent --show-error --fail -X POST 'https://api.runware.ai/v1' -H "Authorization: Bearer $RUNWARE_API_KEY" -H 'Content-Type: application/json' --data-binary @poll-request.json -o response.json
+            cat response.json
+            video_url="$(jq -r '[.data[]? | select(.status == "success" and .videoURL != null)][0].videoURL // empty' response.json)"
+            if [ -n "$video_url" ]; then
+              printf '%s\n' "$video_url" > video_url.txt
+              curl --silent --show-error --fail --location "$video_url" -o Crib_Scout_Scene_1_LipSync.mp4
+              break
+            fi
+            error_count="$(jq -r '.errors | length' response.json)"
+            if [ "$error_count" != "0" ]; then
+              exit 1
+            fi
+            sleep 10
+          done
+          test -s Crib_Scout_Scene_1_LipSync.mp4
 
-      - name: Save Runware response
+      - name: Save completed output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: runware-response
+          name: runware-final-output
           path: |
-            request.json
+            poll-request.json
             response.json
-            http_status.txt
+            video_url.txt
+            Crib_Scout_Scene_1_LipSync.mp4
