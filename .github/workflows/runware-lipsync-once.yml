@@ -1,0 +1,56 @@
+name: Runware LipSync Single Job
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Submit exactly one LipSync request
+        env:
+          RUNWARE_API_KEY: ${{ secrets.RUNWARE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > request.json <<'JSON'
+          [
+            {
+              "model": "sync:lipsync-2@1",
+              "inputs": {
+                "video": "a49f0af8-55cf-49cf-b336-4a552e0cc88b",
+                "audio": "https://github.com/CRIBSCOUTAI/runware-lipsync-temp/raw/refs/heads/main/Scene_1_v3.mp3"
+              },
+              "taskType": "videoInference",
+              "taskUUID": "0175320d-3b12-43f9-bac0-c6f913efaba1",
+              "numberResults": 1,
+              "outputType": "URL",
+              "outputFormat": "MP4",
+              "outputQuality": 95,
+              "deliveryMethod": "async",
+              "providerSettings": {
+                "sync": {
+                  "syncMode": "remap",
+                  "temperature": 0.55
+                }
+              }
+            }
+          ]
+          JSON
+          http_status="$(curl --silent --show-error --connect-timeout 20 --max-time 600 -o response.json -w '%{http_code}' -X POST 'https://api.runware.ai/v1' -H "Authorization: Bearer $RUNWARE_API_KEY" -H 'Content-Type: application/json' --data-binary @request.json)"
+          printf '%s\n' "$http_status" > http_status.txt
+          cat response.json
+
+      - name: Save Runware response
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runware-response
+          path: |
+            request.json
+            response.json
+            http_status.txt
