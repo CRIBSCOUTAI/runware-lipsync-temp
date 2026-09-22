@@ -23,10 +23,10 @@ jobs:
               "model": "sync:lipsync-2@1",
               "inputs": {
                 "video": "a49f0af8-55cf-49cf-b336-4a552e0cc88b",
-                "audio": "https://github.com/CRIBSCOUTAI/runware-lipsync-temp/raw/refs/heads/main/Scene_1_v3.mp3"
+                "audio": "https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3"
               },
               "taskType": "videoInference",
-              "taskUUID": "0175320d-3b12-43f9-bac0-c6f913efaba1",
+              "taskUUID": "f162ee36-94ef-4415-8962-8d239c87fc38",
               "numberResults": 1,
               "outputType": "URL",
               "outputFormat": "MP4",
@@ -41,6 +41,8 @@ jobs:
             }
           ]
           JSON
+          audio_status="$(curl --silent --show-error --head --max-redirs 0 -o /dev/null -w '%{http_code}' 'https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3')"
+          test "$audio_status" = "200"
           http_status="$(curl --silent --show-error --connect-timeout 20 --max-time 600 -o response.json -w '%{http_code}' -X POST 'https://api.runware.ai/v1' -H "Authorization: Bearer $RUNWARE_API_KEY" -H 'Content-Type: application/json' --data-binary @request.json)"
           printf '%s\n' "$http_status" > http_status.txt
           cat response.json
