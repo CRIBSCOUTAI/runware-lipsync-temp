@@ -1,4 +1,4 @@
-name: Runware LipSync Corrective Run
+name: Runware LipSync End-Tail Correction
 
 on:
   workflow_dispatch:
@@ -10,11 +10,11 @@ permissions:
 
 jobs:
   generate:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'RUN_ONCE_LIPSYNC')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'RUN_ONCE_ENDTAIL')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Submit exactly one corrected LipSync request and poll
+      - name: Submit exactly one end-tail LipSync request and poll
         env:
           RUNWARE_API_KEY: ${{ secrets.RUNWARE_API_KEY }}
         shell: bash
@@ -29,24 +29,25 @@ jobs:
                 "audio": "https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3"
               },
               "taskType": "videoInference",
-              "taskUUID": "478fd68a-1414-413c-a5d9-12c775edc928",
+              "taskUUID": "6485c8e3-01c2-483b-8bf6-90c165a7a250",
               "numberResults": 1,
               "outputType": "URL",
               "outputFormat": "MP4",
               "outputQuality": 95,
               "deliveryMethod": "async",
+              "includeCost": true,
               "providerSettings": {
                 "sync": {
-                  "syncMode": "cut_off",
+                  "syncMode": "silence",
                   "temperature": 0.25
                 }
               }
             }
           ]
           JSON
-
           test "$(jq -r '.[0].inputs.video' request.json)" = "a49f0af8-55cf-49cf-b336-4a552e0cc88b"
           test "$(jq -r '.[0].inputs.audio' request.json)" = "https://raw.githubusercontent.com/CRIBSCOUTAI/runware-lipsync-temp/refs/heads/main/Scene_1_v3.mp3"
+          test "$(jq -r '.[0].providerSettings.sync.syncMode' request.json)" = "silence"
 
           curl --silent --show-error --fail -X POST 'https://api.runware.ai/v1' \
             -H "Authorization: Bearer $RUNWARE_API_KEY" \
@@ -59,11 +60,10 @@ jobs:
           [
             {
               "taskType": "getResponse",
-              "taskUUID": "478fd68a-1414-413c-a5d9-12c775edc928"
+              "taskUUID": "6485c8e3-01c2-483b-8bf6-90c165a7a250"
             }
           ]
           JSON
-
           for attempt in $(seq 1 60); do
             curl --silent --show-error --fail -X POST 'https://api.runware.ai/v1' \
               -H "Authorization: Bearer $RUNWARE_API_KEY" \
@@ -73,23 +73,23 @@ jobs:
             video_url="$(jq -r '[.data[]? | select(.status == "success" and .videoURL != null)][0].videoURL // empty' response.json)"
             if [ -n "$video_url" ]; then
               printf '%s\n' "$video_url" > video_url.txt
-              curl --silent --show-error --fail --location "$video_url" -o Crib_Scout_Scene_1_LipSync_Corrected.mp4
+              curl --silent --show-error --fail --location "$video_url" -o Scribby_Scene_1_EndTail_Full.mp4
               break
             fi
             test "$(jq -r '.errors | length' response.json)" = "0"
             sleep 10
           done
-          test -s Crib_Scout_Scene_1_LipSync_Corrected.mp4
+          test -s Scribby_Scene_1_EndTail_Full.mp4
 
-      - name: Save corrected output
+      - name: Save generated output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: runware-corrected-output
+          name: runware-endtail-output
           path: |
             request.json
             submit-response.json
             poll-request.json
             response.json
             video_url.txt
-            Crib_Scout_Scene_1_LipSync_Corrected.mp4
+            Scribby_Scene_1_EndTail_Full.mp4
